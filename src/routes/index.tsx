@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { Settings, Leaf, Play } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Settings, Leaf, Play, Square } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,9 +28,55 @@ export const Route = createFileRoute("/")({
 
 const KEY = "tgc.elevenlabs";
 
+const ROUTINES: Record<string, string[]> = {
+  park: [
+    "Alright, let's touch some grass! Step one: find a bench and do ten incline push-ups, nice and controlled.",
+    "Step two: twenty walking lunges across the grass. Keep your chest tall and breathe.",
+    "Step three: hang from a bar or tree branch for thirty seconds, then shake it out. Repeat the circuit three times. You've got this!",
+  ],
+  trail: [
+    "Welcome to the trail! Step one: brisk walk for five minutes to warm up, swinging your arms.",
+    "Step two: find a small hill and do six uphill sprints, walking back down to recover.",
+    "Step three: at the top, hold a squat for thirty seconds while you enjoy the view. Then cruise home at an easy jog. Great work!",
+  ],
+};
+
+// Simulated Gemma response — swap for a real model call later.
+async function simulateGemma(workout: string) {
+  await new Promise((r) => setTimeout(r, 1200));
+  return (ROUTINES[workout] ?? ROUTINES["park"]) as string[];
+}
+
+const STEP_SECONDS = 45;
+
+async function speak(key: string, text: string) {
+  const res = await fetch(
+    "https://api.elevenlabs.io/v1/text-to-speech/JBFqnCBsd6RMkjVDRZzb?output_format=mp3_44100_128",
+    {
+      method: "POST",
+      headers: { "xi-api-key": key, "Content-Type": "application/json", Accept: "audio/mpeg" },
+      body: JSON.stringify({ text, model_id: "eleven_turbo_v2_5" }),
+    },
+  );
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`ElevenLabs error ${res.status}: ${body.slice(0, 200)}`);
+  }
+  return URL.createObjectURL(await res.blob());
+}
+
 function Index() {
   const [apiKey, setApiKey] = useState("");
   const [workout, setWorkout] = useState("park");
+  const [busy, setBusy] = useState(false);
+  const [active, setActive] = useState(false);
+  const [status, setStatus] = useState("");
+  const [steps, setSteps] = useState<string[]>([]);
+  const [current, setCurrent] = useState(-1);
+  const [left, setLeft] = useState(0);
+  const urls = useRef<string[]>([]);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => setApiKey(localStorage.getItem(KEY) ?? ""), []);
 
@@ -39,12 +85,76 @@ function Index() {
     toast.success("API key saved on this device");
   };
 
-  const start = () => {
-    if (!apiKey) {
+  const clearTimer = () => {
+    if (timer.current) clearInterval(timer.current);
+    timer.current = null;
+  };
+
+  const stop = (msg = "Session stopped") => {
+    clearTimer();
+    audioRef.current?.pause();
+    urls.current.forEach((u) => URL.revokeObjectURL(u));
+    urls.current = [];
+    setActive(false);
+    setCurrent(-1);
+    setStatus(msg);
+  };
+
+  useEffect(() => () => stop(), []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const playCue = (i: number) => {
+    const el = audioRef.current;
+    if (!el || !urls.current[i]) return;
+    setCurrent(i);
+    setStatus(`Step ${i + 1} of ${urls.current.length}`);
+    el.src = urls.current[i];
+    el.play().catch(() => setStatus("Tap play on the audio to hear your coach"));
+  };
+
+  // After each spoken cue, count down the step, then speak the next cue.
+  const onCueEnded = () => {
+    clearTimer();
+    if (current >= urls.current.length - 1) stop("Session complete — nice work!");
+    else startCountdown(current);
+  };
+
+  const startCountdown = (i: number) => {
+    setLeft(STEP_SECONDS);
+    timer.current = setInterval(() => {
+      setLeft((s) => {
+        if (s <= 1) {
+          clearTimer();
+          if (i + 1 < urls.current.length) playCue(i + 1);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+  };
+
+  const start = async () => {
+    const key = apiKey.trim();
+    if (!key) {
       toast.error("Add your ElevenLabs API key in settings first");
       return;
     }
-    toast.success(`Starting ${workout === "park" ? "Park Calisthenics" : "Trail Fitness"} — go touch grass!`);
+    if (busy || active) return;
+    setBusy(true);
+    try {
+      setStatus("Coach is thinking…");
+      const routine = await simulateGemma(workout);
+      setSteps(routine);
+      setStatus("Preparing your voice cues…");
+      const cues = [...routine, "That's the full routine. Great session — go enjoy the fresh air!"];
+      urls.current = await Promise.all(cues.map((t) => speak(key, t)));
+      setActive(true);
+      playCue(0);
+    } catch (e) {
+      setStatus("");
+      toast.error(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -94,13 +204,33 @@ function Index() {
           <span className="pulse-ring absolute inset-0 rounded-full bg-accent [animation-delay:1s]" />
           <button
             onClick={start}
+            disabled={busy || active}
             className="breathe bg-go relative flex h-60 w-60 flex-col items-center justify-center gap-2 rounded-full font-display text-2xl font-extrabold text-primary-foreground transition-transform active:scale-95"
           >
             <Play className="h-10 w-10 fill-current" />
-            <span className="px-8 text-center leading-tight">Start Outdoor Session</span>
+            <span className="px-8 text-center leading-tight">{busy ? "Getting ready…" : active ? "Session Live" : "Start Outdoor Session"}</span>
           </button>
         </div>
       </div>
+
+      <audio ref={audioRef} controls={active} onEnded={onCueEnded} className={active ? "w-full" : "hidden"} />
+
+      {(status || steps.length > 0) && (
+        <section className="my-6 space-y-3 rounded-2xl bg-card p-5">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-primary">{status}</p>
+            {active && left > 0 && <span className="font-display text-2xl font-extrabold">{left}s</span>}
+          </div>
+          <ol className="space-y-2">
+            {steps.map((t, i) => (
+              <li key={i} className={`rounded-xl p-3 text-sm leading-relaxed ${i === current ? "bg-secondary text-secondary-foreground" : "text-muted-foreground"}`}>{t}</li>
+            ))}
+          </ol>
+          {active && (
+            <Button variant="outline" className="w-full" onClick={() => stop()}><Square /> End session</Button>
+          )}
+        </section>
+      )}
     </main>
   );
 }
