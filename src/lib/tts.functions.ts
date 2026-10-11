@@ -7,7 +7,7 @@ export const speakWithStoredKey = createServerFn({ method: "POST" })
     return { text: d.text };
   })
   .handler(async ({ data }) => {
-    const key = process.env.ELEVENLABS_API_KEY;
+    const key = process.env['ELEVENLABS_API_KEY'];
     if (!key) throw new Error("ElevenLabs key is not configured");
     const res = await fetch(
       "https://api.elevenlabs.io/v1/text-to-speech/JBFqnCBsd6RMkjVDRZzb?output_format=mp3_44100_128",
