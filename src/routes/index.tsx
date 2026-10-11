@@ -40,7 +40,10 @@ function Index() {
   };
 
   const start = () => {
-    if (!apiKey) return toast.error("Add your ElevenLabs API key in settings first");
+    if (!apiKey) {
+      toast.error("Add your ElevenLabs API key in settings first");
+      return;
+    }
     toast.success(`Starting ${workout === "park" ? "Park Calisthenics" : "Trail Fitness"} — go touch grass!`);
   };
 
