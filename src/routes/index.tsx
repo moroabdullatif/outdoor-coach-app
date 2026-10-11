@@ -114,14 +114,8 @@ function Index() {
   // After each spoken cue, count down the step, then speak the next cue.
   const onCueEnded = () => {
     clearTimer();
-    const i = current;
-    if (i >= urls.current.length - 1 && urls.current.length > 0) {
-      setLeft(0);
-      if (i === urls.current.length - 1 && urls.current.length === steps.length + 1) stop("Session complete — nice work!");
-      else startCountdown(i);
-      return;
-    }
-    startCountdown(i);
+    if (current >= urls.current.length - 1) stop("Session complete — nice work!");
+    else startCountdown(current);
   };
 
   const startCountdown = (i: number) => {
