@@ -28,9 +28,33 @@ export const Route = createFileRoute("/")({
 
 const KEY = "tgc.elevenlabs";
 
+const ROUTINES: Record<string, string[]> = {
+  park: [
+    "Alright, let's touch some grass! Step one: find a bench and do ten incline push-ups, nice and controlled.",
+    "Step two: twenty walking lunges across the grass. Keep your chest tall and breathe.",
+    "Step three: hang from a bar or tree branch for thirty seconds, then shake it out. Repeat the circuit three times. You've got this!",
+  ],
+  trail: [
+    "Welcome to the trail! Step one: brisk walk for five minutes to warm up, swinging your arms.",
+    "Step two: find a small hill and do six uphill sprints, walking back down to recover.",
+    "Step three: at the top, hold a squat for thirty seconds while you enjoy the view. Then cruise home at an easy jog. Great work!",
+  ],
+};
+
+// Simulated Gemma response — swap for a real model call later.
+async function simulateGemma(workout: string) {
+  await new Promise((r) => setTimeout(r, 1200));
+  return ROUTINES[workout].join(" ");
+}
+
 function Index() {
   const [apiKey, setApiKey] = useState("");
   const [workout, setWorkout] = useState("park");
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+  const [routine, setRoutine] = useState("");
+  const [audioUrl, setAudioUrl] = useState("");
+  const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => setApiKey(localStorage.getItem(KEY) ?? ""), []);
 
@@ -39,12 +63,43 @@ function Index() {
     toast.success("API key saved on this device");
   };
 
-  const start = () => {
-    if (!apiKey) {
+  const start = async () => {
+    const key = apiKey.trim();
+    if (!key) {
       toast.error("Add your ElevenLabs API key in settings first");
       return;
     }
-    toast.success(`Starting ${workout === "park" ? "Park Calisthenics" : "Trail Fitness"} — go touch grass!`);
+    if (busy) return;
+    setBusy(true);
+    try {
+      setStatus("Coach is thinking…");
+      const text = await simulateGemma(workout);
+      setRoutine(text);
+      setStatus("Generating voice…");
+      const res = await fetch(
+        "https://api.elevenlabs.io/v1/text-to-speech/JBFqnCBsd6RMkjVDRZzb?output_format=mp3_44100_128",
+        {
+          method: "POST",
+          headers: { "xi-api-key": key, "Content-Type": "application/json", Accept: "audio/mpeg" },
+          body: JSON.stringify({ text, model_id: "eleven_turbo_v2_5" }),
+        },
+      );
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`ElevenLabs error ${res.status}: ${body.slice(0, 200)}`);
+      }
+      const blob = await res.blob();
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+      const url = URL.createObjectURL(blob);
+      setAudioUrl(url);
+      setStatus("Playing your routine");
+      requestAnimationFrame(() => audioRef.current?.play().catch(() => setStatus("Tap play to listen")));
+    } catch (e) {
+      setStatus("");
+      toast.error(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
