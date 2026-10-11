@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { Settings, Leaf, Play, Square } from "lucide-react";
 import { toast } from "sonner";
+import { speakWithStoredKey } from "@/lib/tts.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -50,6 +51,10 @@ async function simulateGemma(workout: string) {
 const STEP_SECONDS = 45;
 
 async function speak(key: string, text: string) {
+  if (!key) {
+    const { audio } = await speakWithStoredKey({ data: { text } });
+    return `data:audio/mpeg;base64,${audio}`;
+  }
   const res = await fetch(
     "https://api.elevenlabs.io/v1/text-to-speech/JBFqnCBsd6RMkjVDRZzb?output_format=mp3_44100_128",
     {
@@ -93,7 +98,7 @@ function Index() {
   const stop = (msg = "Session stopped") => {
     clearTimer();
     audioRef.current?.pause();
-    urls.current.forEach((u) => URL.revokeObjectURL(u));
+    urls.current.forEach((u) => u.startsWith("blob:") && URL.revokeObjectURL(u));
     urls.current = [];
     setActive(false);
     setCurrent(-1);
@@ -134,10 +139,6 @@ function Index() {
 
   const start = async () => {
     const key = apiKey.trim();
-    if (!key) {
-      toast.error("Add your ElevenLabs API key in settings first");
-      return;
-    }
     if (busy || active) return;
     setBusy(true);
     try {
@@ -171,7 +172,7 @@ function Index() {
           <SheetContent side="right" className="w-full sm:max-w-sm">
             <SheetHeader>
               <SheetTitle className="font-display">Settings</SheetTitle>
-              <SheetDescription>Your key stays on this device.</SheetDescription>
+              <SheetDescription>Optional — a default key is already set up. A key saved here stays on this device and overrides it.</SheetDescription>
             </SheetHeader>
             <div className="space-y-3 px-4">
               <Label htmlFor="key">ElevenLabs API key</Label>
