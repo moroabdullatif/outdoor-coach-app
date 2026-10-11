@@ -44,7 +44,7 @@ const ROUTINES: Record<string, string[]> = {
 // Simulated Gemma response — swap for a real model call later.
 async function simulateGemma(workout: string) {
   await new Promise((r) => setTimeout(r, 1200));
-  return ROUTINES[workout] ?? ROUTINES.park;
+  return (ROUTINES[workout] ?? ROUTINES["park"]) as string[];
 }
 
 const STEP_SECONDS = 45;
